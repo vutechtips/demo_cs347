@@ -1,5 +1,7 @@
 # demo_cs347 — OpenVPN thật bằng Linux network namespace
 
+**Tự thực hành từng bước:** [Hướng dẫn demo bằng tiếng Việt](docs/HUONG_DAN_DEMO.md) — lệnh, kết quả cần thấy, lời thuyết trình và xử lý lỗi.
+
 Lab HQ + 3 chi nhánh cho đồ án CS347, dựng bằng một kernel Linux. Chạy trên Ubuntu 24.04 hoặc Ubuntu 24.04 trong WSL2; không cần VMware, VirtualBox hay Docker. WSL2 vẫn sử dụng ảo hóa nhẹ bên dưới.
 
 OpenVPN, PKI, routing, VLAN, firewall và gói tin đều chạy thật. Internet trong lab là mạng WAN cô lập, không kết nối Internet bên ngoài. Đây là lab trên một máy; clone repo trên máy khác sẽ tạo một lab độc lập, không tự nối VPN hai laptop với nhau.
