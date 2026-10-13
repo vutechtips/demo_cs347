@@ -2,3 +2,4 @@
 *.sh text eol=lf
 *.py text eol=lf
 *.nft text eol=lf
+*.cmd text eol=crlf

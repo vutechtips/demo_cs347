@@ -65,12 +65,14 @@ sudo bash scripts/start-lab.sh
 Máy đã có WSL có thể dùng launcher PowerShell từ thư mục repo:
 
 ```powershell
-.\lab.ps1 install
-.\lab.ps1 start
-.\lab.ps1 erp
+.\lab.cmd install
+.\lab.cmd start
+.\lab.cmd erp
 ```
 
 Launcher dùng tài khoản root của distro Ubuntu-24.04 để dựng namespace. Không thay đổi firewall hay bảng định tuyến của Windows. Ubuntu distro và gói phụ thuộc cần Internet lúc cài; lab đã cài xong có thể demo offline.
+
+`lab.cmd` dùng được cả PowerShell và CMD, không cần đổi execution policy. `lab.ps1` là launcher tùy chọn cho máy cho phép chạy script PowerShell và hỗ trợ tên distro khác.
 
 ### Ubuntu trực tiếp
 
@@ -154,7 +156,7 @@ Stop chỉ kết thúc tiến trình trong namespace mang tên `cs347-*`, rồi 
 ## Các file chính
 
 ```text
-lab.ps1                    Launcher cho Windows/WSL
+lab.cmd / lab.ps1          Launcher cho Windows/WSL
 scripts/start-lab.sh        Topology + PKI + OpenVPN + HTTPS
 scripts/stop-lab.sh         Dừng và dọn namespace
 scripts/demo.sh             Các bài demo theo lựa chọn
