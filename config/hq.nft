@@ -1,0 +1,21 @@
+table inet lab {
+  counter erp_allowed {}
+  counter interbranch_allowed {}
+  counter mgmt_denied {}
+  counter default_denied {}
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iifname "lo" accept
+    ct state established,related accept
+    iifname "wan0" udp dport 1194 accept
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state invalid drop
+    ct state established,related accept
+    iifname "tun0" ip saddr {10.20.10.0/24,10.30.10.0/24,10.40.10.0/24} ip daddr 10.10.20.10 tcp dport 443 counter name erp_allowed accept
+    iifname "tun0" oifname "tun0" ip saddr 10.20.10.0/24 ip daddr 10.30.10.10 tcp dport 443 counter name interbranch_allowed accept
+    iifname "tun0" ip daddr 10.10.30.0/24 counter name mgmt_denied drop
+    counter name default_denied drop
+  }
+}

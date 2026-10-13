@@ -1,0 +1,14 @@
+table inet lab {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iifname "lo" accept
+    ct state established,related accept
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state invalid drop
+    ct state established,related accept
+    iifname "lan0" oifname "tun0" accept
+    iifname "tun0" oifname "lan0" tcp dport 443 accept
+  }
+}
