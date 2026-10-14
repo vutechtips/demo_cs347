@@ -2,6 +2,100 @@
 
 Thời lượng gợi ý: 8–10 phút. Chạy từng lệnh, quan sát kết quả rồi giải thích trước khi chuyển bài.
 
+## Đọc trước: ba terminal dùng CHUNG một lab
+
+Terminal chỉ là cửa sổ nhập lệnh, không phải một máy mạng. Mở ba terminal không tạo ra ba lab. Các thiết bị HQ/BR1/BR2/BR3 đã được tạo trong Ubuntu bằng namespace khi chạy `start`.
+
+| Việc | Chạy bao nhiêu lần? | Chạy ở đâu? |
+|---|---|---|
+| `git clone` | Một lần trên mỗi máy | Một terminal bất kỳ; tải mã nguồn |
+| `install` | Một lần khi chuẩn bị môi trường | Một terminal bất kỳ; cài gói Ubuntu |
+| `cd` vào repo | Mỗi terminal một lần | Cả ba terminal; mỗi cửa sổ có thư mục hiện tại riêng |
+| `start` | Một lần cho mỗi lượt dựng lab | Tab 3; tất cả terminal dùng chung lab đó |
+| `erp`, `mgmt`, `branch`, `deny` | Mỗi lần muốn thử | Tab 3; tạo lưu lượng thật |
+| `wan`, `tunnel`, `log` | Chạy khi muốn quan sát | Tab 1/2; giữ terminal đến khi Ctrl+C |
+| `stop` | Một lần khi kết thúc | Tab 3; dừng lab chung |
+
+Không chạy `clone`, `install` hoặc `start` lặp lại ở mỗi terminal. Nếu đã tải repo trên máy này thì chỉ vào thư mục đó.
+
+## Lần đầu trên máy khác: nhập từng lệnh
+
+Mở PowerShell, chạy:
+
+```powershell
+wsl -l -v
+```
+
+**Đọc kết quả:** phải có `Ubuntu-24.04`, cột VERSION là `2`. Nếu hiện Stopped thì distro chưa chạy, không phải lỗi; launcher sẽ khởi động nó. Nếu chưa có distro:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Lệnh cài Ubuntu, không tải dự án. Làm theo yêu cầu của Windows; khởi động lại nếu cần và mở Ubuntu để hoàn tất tạo người dùng. Có thể cần PowerShell quản trị cho bước cài WSL.
+
+Tiếp theo, chọn thư mục muốn lưu repo rồi chạy:
+
+```powershell
+git clone https://github.com/vutechtips/demo_cs347.git
+```
+
+**Giải thích:** Git tải mã nguồn vào thư mục `demo_cs347`; chưa có VPN nào chạy. Nếu PowerShell không tìm thấy `git`, cần cài Git trước hoặc tải ZIP repo từ GitHub và giải nén.
+
+```powershell
+cd demo_cs347
+```
+
+**Giải thích:** chuyển terminal hiện tại vào thư mục dự án. Chạy `pwd` để biết đường dẫn, ghi lại để các tab khác vào cùng nơi.
+
+```powershell
+dir lab.cmd
+```
+
+**Đọc kết quả:** thấy file `lab.cmd` là đã vào đúng thư mục. Nếu không thấy, chưa chạy các lệnh demo; tìm lại thư mục chứa file.
+
+```powershell
+.\lab.cmd install
+```
+
+**Giải thích:** launcher gọi Ubuntu WSL để cài OpenVPN, Easy-RSA, nftables, tcpdump và các công cụ cần thiết. Log cài gói có thể dài. Lệnh này cần Internet, chỉ chuẩn bị môi trường, không chạy testcase. Đợi lệnh kết thúc và quay lại dấu nhắc PowerShell.
+
+## Lần này trên máy bạn: mở terminal đúng thứ tự
+
+Máy hiện tại đã clone và cài gói, bỏ qua phần cài lần đầu.
+
+**Tab 1:** mở PowerShell, nhập:
+
+```powershell
+cd E:\baitap\openvpn-netns-lab
+```
+
+**Tab 2:** mở PowerShell mới, nhập cùng lệnh:
+
+```powershell
+cd E:\baitap\openvpn-netns-lab
+```
+
+**Tab 3:** mở PowerShell mới, nhập cùng lệnh:
+
+```powershell
+cd E:\baitap\openvpn-netns-lab
+```
+
+`cd` không tạo hoặc khởi động mạng. Ba tab cùng đọc mã nguồn trong một thư mục; mỗi tab vẫn có thể chạy một tác vụ riêng. Trên máy khác hãy thay đường dẫn trên bằng vị trí repo của máy đó.
+
+Khi thấy ví dụ `.\lab.cmd erp`: ` .\ ` chỉ file trong thư mục hiện tại; `lab.cmd` là launcher Windows; `erp` là bài demo được chọn. Bên dưới, launcher chạy script trong Ubuntu với quyền root để thao tác network namespace.
+
+## Cách đọc lệnh và kết quả trước khi tiếp tục
+
+- `start`, `status`, `erp`, `mgmt`, `branch`, `deny`, `revoke`, `restore`, `stop` kết thúc rồi trả lại dấu nhắc: đợi xong trước khi nhập lệnh tiếp.
+- `wan`, `tunnel`, `log` chạy liên tục: dùng tab khác để gửi yêu cầu; Ctrl+C khi muốn dùng lại tab đang quan sát.
+- `[PASS]` nghĩa là bài kiểm tra đạt kỳ vọng. Với `mgmt` và `deny`, truy cập thất bại mới là đúng.
+- `[FAIL]` nghĩa là chưa có bằng chứng đạt yêu cầu. Đọc thông báo, kiểm tra trạng thái/log; không trình bày FAIL như kết quả thành công.
+- Counter là số gói/byte rule đã xử lý. Chạy bài kiểm tra nhiều lần thì counter tăng; không cần giống số minh họa.
+
+Sau phần chuẩn bị, thực hiện mục 2–9 bên dưới theo thứ tự. Mỗi mục có tab, lệnh, kết quả và lời giải thích để bạn đọc ngay sau khi chạy.
+
 ## 1. Chuẩn bị
 
 Máy cần Windows có Ubuntu 24.04 trong WSL2 và Git. Lab không dùng VMware hay Docker; WSL2 vẫn sử dụng ảo hóa nhẹ. OpenVPN và firewall chạy thật. WAN là mạng giả lập cô lập trên máy, không phải Internet bên ngoài.
