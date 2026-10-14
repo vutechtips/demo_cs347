@@ -1,185 +1,274 @@
-# demo_cs347 — OpenVPN thật bằng Linux network namespace
+# demo_cs347 — Demo OpenVPN site-to-site bằng namespace
 
-**Tự thực hành từng bước:** [Hướng dẫn demo bằng tiếng Việt](docs/HUONG_DAN_DEMO.md) — lệnh, kết quả cần thấy, lời thuyết trình và xử lý lỗi.
+Lab OpenVPN thật: HQ làm hub, BR1–BR3 làm spoke. Chạy trên Ubuntu 24.04 hoặc Ubuntu trong WSL2, không cần VMware hay Docker. WSL2 vẫn dùng ảo hóa nhẹ. WAN là mạng cô lập giả lập ISP; không phải Internet bên ngoài.
 
-**Kết nối thủ công:** `start` chỉ dựng mạng; chưa bật VPN. Trên Windows mở 4 cửa sổ CMD trong repo, lần lượt chạy `lab.cmd hq`, `lab.cmd br1`, `lab.cmd br2`, `lab.cmd br3`. Mỗi lệnh bật VPN của site đó rồi theo dõi log realtime. Dùng cửa sổ thứ 5 để chạy testcase. Trên Ubuntu dùng `sudo bash scripts/connect.sh hq` và tương tự cho từng branch. HQ phải bật trước branch.
+**Cách demo mới:** `start` chỉ dựng mạng và chứng chỉ. Bạn tự bật HQ, kết nối từng chi nhánh để thấy log realtime, rồi thử routing/firewall/thu hồi chứng chỉ.
 
-Lab HQ + 3 chi nhánh cho đồ án CS347, dựng bằng một kernel Linux. Chạy trên Ubuntu 24.04 hoặc Ubuntu 24.04 trong WSL2; không cần VMware, VirtualBox hay Docker. WSL2 vẫn sử dụng ảo hóa nhẹ bên dưới.
+## 1. Chuẩn bị một lần trên mỗi máy
 
-OpenVPN, PKI, routing, VLAN, firewall và gói tin đều chạy thật. Internet trong lab là mạng WAN cô lập, không kết nối Internet bên ngoài. Đây là lab trên một máy; clone repo trên máy khác sẽ tạo một lab độc lập, không tự nối VPN hai laptop với nhau.
+Trên Windows kiểm tra:
 
-## Bám theo sơ đồ Packet Tracer
-
-| Thiết bị trong ảnh | Namespace Linux | Địa chỉ |
-|---|---|---|
-| Switch0 — WAN/ISP | `cs347-internet`, bridge `wanbr` | Underlay 198.51.100.0/24 |
-| HQ-RTR | `cs347-hq` | WAN 198.51.100.10 (giả định) |
-| Switch1 | `cs347-hqsw`, bridge VLAN | Trunk VLAN 10/20/30 (giả định) |
-| PC0 — Users | `cs347-users` | 10.10.10.10/24, gateway .1 |
-| Server0 — ERP | `cs347-erp` | 10.10.20.10/24, gateway .1 |
-| PC1 — Management | `cs347-mgmt` | 10.10.30.10/24, gateway .1 |
-| BR1-RTR | `cs347-br1` | WAN 198.51.100.11; LAN 10.20.10.1/24 |
-| Switch2 / PC2 | `cs347-br1sw` / `cs347-pc1` | PC2: 10.20.10.10/24 |
-| BR2-RTR | `cs347-br2` | WAN 198.51.100.12; LAN 10.30.10.1/24 |
-| Switch3 / PC3 | `cs347-br2sw` / `cs347-pc2` | PC3: 10.30.10.10/24 |
-| BR3-RTR | `cs347-br3` | WAN 198.51.100.13; LAN 10.40.10.1/24 |
-| Switch4 / PC4 | `cs347-br3sw` / `cs347-pc3` | PC4: 10.40.10.10/24 |
-
-Tên `pc1/pc2/pc3` trong script nghĩa là PC của chi nhánh 1/2/3, tương ứng PC2/PC3/PC4 trong ảnh.
-
-Ảnh được cung cấp chưa ghi cấu hình HQ, VLAN hoặc ACL. Các mục đánh dấu giả định dựa trên đoạn chat gốc, chưa phải cấu hình được trích xuất từ file `.pka`. Khi có file hoặc bảng địa chỉ HQ, cần đối chiếu lại. Linux bridge thay chức năng chuyển mạch L2; Linux gateway thay router Cisco, không chạy Cisco IOS.
-
-```mermaid
-flowchart TB
-  WAN["Switch0 / WAN bridge\n198.51.100.0/24"]
-  HQ["HQ-RTR / OpenVPN hub\n198.51.100.10"] --- WAN
-  HQ --- SW1["Switch1 / VLAN trunk 10,20,30"]
-  SW1 --- PC0["PC0 / Users\n10.10.10.10"]
-  SW1 --- ERP["Server0 / ERP HTTPS\n10.10.20.10"]
-  SW1 --- PC1["PC1 / Management\n10.10.30.10"]
-  WAN --- BR1["BR1-RTR / .11"]
-  WAN --- BR2["BR2-RTR / .12"]
-  WAN --- BR3["BR3-RTR / .13"]
-  BR1 --- SW2[Switch2] --- PC2["PC2 / 10.20.10.10"]
-  BR2 --- SW3[Switch3] --- PC3["PC3 / 10.30.10.10"]
-  BR3 --- SW4[Switch4] --- PC4["PC4 / 10.40.10.10"]
+```cmd
+wsl -l -v
 ```
 
-## Chạy trên máy khác
-
-### Windows
-
-Cần WSL2 với Ubuntu 24.04. Nếu chưa có, mở PowerShell quản trị:
+Cần thấy `Ubuntu-24.04` và VERSION `2`. Nếu chưa có, dùng PowerShell quản trị để cài:
 
 ```powershell
 wsl --install -d Ubuntu-24.04
 ```
 
-Khởi động lại nếu Windows yêu cầu; mở Ubuntu để hoàn tất tạo người dùng. Trong terminal Ubuntu:
+Làm theo yêu cầu khởi động lại và tạo người dùng Ubuntu. Cần Git trên Windows để clone repo. Mở CMD tại thư mục muốn lưu dự án:
 
-```bash
-sudo apt-get update
-sudo apt-get install -y git
+```cmd
 git clone https://github.com/vutechtips/demo_cs347.git
 cd demo_cs347
-sudo bash scripts/install.sh
-sudo bash scripts/start-lab.sh
+lab.cmd install
 ```
 
-Máy đã có WSL có thể dùng launcher PowerShell từ thư mục repo:
+Giải thích: clone tải mã nguồn; install cài OpenVPN, Easy-RSA, nftables, tcpdump và các gói trong Ubuntu. Cần Internet lúc cài; chưa có VPN kết nối. Chỉ clone/install một lần trên mỗi máy.
 
-```powershell
-.\lab.cmd install
-.\lab.cmd start
-.\lab.cmd erp
+Máy đã clone muốn lấy bản mới:
+
+```cmd
+git pull --ff-only
 ```
 
-Launcher dùng tài khoản root của distro Ubuntu-24.04 để dựng namespace. Không thay đổi firewall hay bảng định tuyến của Windows. Ubuntu distro và gói phụ thuộc cần Internet lúc cài; lab đã cài xong có thể demo offline.
+## 2. Mở cửa sổ điều khiển và dựng mạng
 
-`lab.cmd` dùng được cả PowerShell và CMD, không cần đổi execution policy. `lab.ps1` là launcher tùy chọn cho máy cho phép chạy script PowerShell và hỗ trợ tên distro khác.
+Trên máy đang làm dự án, mở CMD:
 
-### Ubuntu trực tiếp
-
-```bash
-git clone https://github.com/vutechtips/demo_cs347.git
-cd demo_cs347
-sudo bash scripts/install.sh
-sudo bash scripts/start-lab.sh
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title DIEU KHIEN DEMO
+lab.cmd start
 ```
 
-`start-lab.sh` chỉ dựng mạng; dùng `connect.sh` để tự bật HQ và từng branch; không tự chạy testcase. Lần đầu tạo CA/chứng chỉ; lần sau dùng lại. Runtime nằm trong `/var/lib/cs347-lab`, ngoài repo.
+Máy khác thay đường dẫn bằng thư mục repo của máy đó. Trong CMD, `cd /d` chuyển cả ổ đĩa và thư mục. PowerShell dùng `cd` và gọi `.\lab.cmd`.
 
-## Demo trước giám khảo
+Nếu lab cũ đang chạy, dùng `lab.cmd stop` trước rồi chạy start lại.
 
-Mở 3 terminal Ubuntu, cùng vào thư mục repo:
+Kết quả cần thấy:
 
-```bash
-# Terminal 1: trạng thái và firewall
-sudo bash scripts/demo.sh status
-# Terminal 2: xem log HQ trực tiếp; Ctrl+C để thoát
-sudo bash scripts/demo.sh log
-# Terminal 3: thực hiện từng bài bên dưới
+```text
+[OK] Network ready. HQ and all branches are OFFLINE; no VPN started.
 ```
 
-| Lệnh | Kết quả | Ý nghĩa |
+**Giải thích:** các gateway, switch, máy LAN, PKI và dịch vụ HTTPS đã sẵn sàng. HQ/BR chưa chạy VPN; chưa có tunnel. Mọi terminal dùng chung lab này, không start riêng từng cửa sổ.
+
+Giữ cửa sổ này để chạy các bài test. Mở thêm bốn cửa sổ CMD dưới đây: tổng cộng 5 cửa sổ, gồm điều khiển, HQ, BR1, BR2, BR3.
+
+## 3. Bật HQ — cửa sổ CMD thứ hai
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title HQ - VPN SERVER
+lab.cmd hq
+```
+
+**Kết quả:** `[OK] hq tunnel is UP` và log server chạy liên tục; có thể thấy `Initialization Sequence Completed`.
+
+**Giải thích:** HQ bắt đầu lắng nghe OpenVPN UDP/1194 và có tunnel 10.255.0.1. HQ lên chưa có nghĩa các chi nhánh đã kết nối. Để cửa sổ mở và quan sát khi bật từng branch.
+
+## 4. Kết nối BR1 — cửa sổ CMD thứ ba
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title BR1 - VPN CLIENT
+lab.cmd br1
+```
+
+**Kết quả:** `[OK] br1 tunnel is UP`; log BR1 có `Initialization Sequence Completed`. Cửa sổ HQ xuất hiện log xác thực/kết nối liên quan `br1`.
+
+**Giải thích khi demo:** “BR1 xác thực với HQ bằng chứng chỉ riêng. Sau khi được chấp nhận, BR1 có địa chỉ tunnel 10.255.0.2 và các route cần thiết.”
+
+## 5. Kết nối BR2 — cửa sổ CMD thứ tư
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title BR2 - VPN CLIENT
+lab.cmd br2
+```
+
+**Kết quả:** BR2 hoàn thành kết nối; HQ xuất hiện `br2`. Tunnel BR2 là 10.255.0.3.
+
+**Giải thích:** BR2 dùng chứng chỉ riêng và sở hữu LAN 10.30.10.0/24. HQ biết phải chuyển lưu lượng đến LAN đó qua BR2.
+
+## 6. Kết nối BR3 — cửa sổ CMD thứ năm
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title BR3 - VPN CLIENT
+lab.cmd br3
+```
+
+**Kết quả:** BR3 hoàn thành kết nối; HQ xuất hiện `br3`. Tunnel BR3 là 10.255.0.4.
+
+**Giải thích:** ba chi nhánh kết nối độc lập vào cùng hub HQ. Đây là site-to-site vì VPN phục vụ các LAN phía sau gateway.
+
+Các cửa sổ log có thể im lặng khi không có sự kiện mới. Ctrl+C chỉ dừng xem log, VPN vẫn chạy. Chạy lại `lab.cmd hq`/`br1`/`br2`/`br3` sẽ tiếp tục xem log, không tạo thêm VPN nếu site đã chạy. Muốn dừng toàn bộ lab dùng `lab.cmd stop`.
+
+## 7. Xác nhận kết nối — quay lại cửa sổ điều khiển
+
+```cmd
+lab.cmd status
+```
+
+**Kết quả:** có 3 dòng `CLIENT_LIST` chứa br1, br2, br3; mã hóa `AES-256-GCM`. File trạng thái cập nhật mỗi giây; nếu chưa đủ client, chạy status lại sau một giây.
+
+`ROUTING_TABLE` thể hiện LAN nào thuộc branch nào. Counter firewall đang là 0 nếu chưa test. `status` chỉ đọc thông tin, không gửi bài kiểm tra.
+
+## 8. BR1 truy cập ERP — được phép
+
+```cmd
+lab.cmd erp
+```
+
+**Kết quả:** `ERP-HQ` và `[PASS] ERP reachable over VPN`.
+
+**Giải thích:** PC BR1 đi qua switch, gateway BR1, tunnel, firewall HQ rồi đến ERP 10.10.20.10 bằng HTTPS/TCP443. Policy cho phép nên nhận được phản hồi thật. ERP ở đây là endpoint HTTPS kiểm thử, không phải ứng dụng ERP đầy đủ.
+
+Chạy `lab.cmd status` để xem counter `erp_allowed` tăng.
+
+## 9. BR1 truy cập Management — bị chặn
+
+```cmd
+lab.cmd mgmt
+```
+
+**Kết quả:** chờ khoảng 3 giây; curl timeout và `[PASS] HQ management drop counter increased: ... -> ...`.
+
+**Giải thích:** thất bại truy cập là kết quả mong muốn. Counter `mgmt_denied` tăng chứng minh gói đã đến firewall HQ và bị chặn, không chỉ suy đoán từ timeout. Số counter có thể khác mỗi lần chạy.
+
+## 10. Policy giữa hai chi nhánh
+
+```cmd
+lab.cmd branch
+```
+
+**Kết quả:** `BR2-HTTPS` và PASS. BR1 truy cập dịch vụ HTTPS tại PC BR2 được phép.
+
+```cmd
+lab.cmd deny
+```
+
+**Kết quả:** ping thất bại, counter default deny tăng và PASS.
+
+**Giải thích:** cùng nguồn/đích nhưng HTTPS được phép, ICMP bị chặn. Luồng giữa hai branch qua kernel HQ và nftables; không bật `client-to-client` hoặc DCO trong lab để bảo đảm luồng không đi tắt khỏi firewall HQ.
+
+## 11. Bắt gói realtime
+
+Giữ bốn cửa sổ HQ/BR nếu muốn. Mở thêm hai CMD, cùng vào thư mục repo.
+
+**CMD bắt gói WAN:**
+
+```cmd
+lab.cmd wan
+```
+
+**CMD bắt gói tunnel:**
+
+```cmd
+lab.cmd tunnel
+```
+
+**Cửa sổ điều khiển:**
+
+```cmd
+lab.cmd erp
+```
+
+| Quan sát | Kết quả mong muốn |
+|---|---|
+| WAN | 198.51.100.11 ↔ 198.51.100.10, UDP/1194 |
+| Tunnel | 10.20.10.10 ↔ 10.10.20.10, TCP/443 |
+
+**Giải thích:** WAN thấy gói OpenVPN giữa các IP WAN; tunnel thấy header IP LAN gốc. HTTPS vẫn mã hóa nội dung ứng dụng trên tun0, không đọc được plaintext HTTPS từ bài này. tcpdump có thể hiện tên `https` thay số 443.
+
+Ctrl+C ở hai cửa sổ bắt gói để kết thúc quan sát. Nếu ít màn hình, dùng Ctrl+C ở hai cửa sổ log BR rồi chạy wan/tunnel trong chính các cửa sổ đó; VPN vẫn hoạt động.
+
+## 12. Thu hồi chứng chỉ BR2 — xem đồng thời HQ và BR2
+
+Tại cửa sổ điều khiển:
+
+```cmd
+lab.cmd revoke
+```
+
+**Kết quả:** HQ có `VERIFY ERROR ... certificate revoked: CN=br2`, bài thử báo PASS; BR2 có lỗi xác thực/kết nối.
+
+**Giải thích:** Easy-RSA thu hồi chứng chỉ BR2 và sinh CRL. Script chủ động ngắt BR2 rồi kết nối lại bằng chứng chỉ cũ để chứng minh HQ từ chối. Thu hồi không được coi là tự động ngắt ngay phiên TLS đang tồn tại. Không chạy revoke lần hai trước khi restore.
+
+```cmd
+lab.cmd restore
+```
+
+**Kết quả:** BR2 kết nối lại, HTTPS trả `BR2-HTTPS` và PASS.
+
+**Giải thích:** BR2 được cấp khóa/chứng chỉ MỚI; serial cũ vẫn nằm trong CRL. Bốn cửa sổ log đang theo dõi file sẽ tiếp tục hiển thị sự kiện mới.
+
+## 13. Kết thúc và tự luyện lại
+
+```cmd
+lab.cmd stop
+```
+
+Kết quả `Lab stopped; certificates retained`. Namespace/tiến trình lab được dọn; PKI và log giữ ở `/var/lib/cs347-lab`. Ctrl+C để thoát các cửa sổ xem log. Khi tập lại: start → hq → br1 → br2 → br3 → testcase.
+
+Sau khi đủ ba branch kết nối, có thể tự kiểm tra nhanh:
+
+```cmd
+lab.cmd test
+lab.cmd capture
+```
+
+Hai lệnh kiểm tra policy và capture thật; khi bảo vệ nên chạy từng testcase để giải thích.
+
+## Topology và phạm vi
+
+| Thiết bị trong ảnh Packet Tracer | Namespace | Địa chỉ |
 |---|---|---|
-| `sudo bash scripts/demo.sh erp` | `ERP-HQ`, PASS | PC BR1 truy cập ERP qua TCP/443 |
-| `sudo bash scripts/demo.sh mgmt` | Timeout, PASS + counter tăng | Chứng minh HQ firewall chặn Management |
-| `sudo bash scripts/demo.sh branch` | `BR2-HTTPS`, PASS | BR1 đến BR2 qua hub, TCP/443 |
-| `sudo bash scripts/demo.sh deny` | Ping thất bại, PASS + counter tăng | BR1 đến BR2 ICMP bị default deny |
-| `sudo bash scripts/demo.sh status` | Client và counter thật | Đối chiếu kết nối với các rule |
+| Switch0 / WAN | cs347-internet / wanbr | 198.51.100.0/24 |
+| HQ-RTR | cs347-hq | WAN 198.51.100.10 (giả định) |
+| Switch1 | cs347-hqsw | Trunk VLAN10/20/30 (giả định) |
+| PC0 / Users | cs347-users | 10.10.10.10/24 |
+| Server0 / ERP | cs347-erp | 10.10.20.10/24 |
+| PC1 / Management | cs347-mgmt | 10.10.30.10/24 |
+| BR1-RTR / Switch2 / PC2 | cs347-br1 / br1sw / pc1 | WAN .11; LAN 10.20.10.0/24 |
+| BR2-RTR / Switch3 / PC3 | cs347-br2 / br2sw / pc2 | WAN .12; LAN 10.30.10.0/24 |
+| BR3-RTR / Switch4 / PC4 | cs347-br3 / br3sw / pc3 | WAN .13; LAN 10.40.10.0/24 |
 
-Timeout chỉ là hiện tượng; script còn xác nhận counter của rule chặn tăng để tránh nhầm lỗi mạng với firewall hoạt động đúng. HTTPS xác minh chứng chỉ demo bằng `--cacert`, không bỏ kiểm tra TLS.
+Gateway LAN là .1, PC là .10. Switch dùng Linux bridge; gateway Linux không chạy Cisco IOS. Namespace cô lập interface, route và firewall nhưng dùng chung kernel. CCD `iroute` xác định LAN thuộc branch; `route` đưa gói từ kernel HQ vào tunnel.
 
-### Bắt gói WAN và tunnel
+Ảnh chưa có IP/VLAN/ACL HQ và chưa có file `.pka`; phần HQ là giả định theo đoạn chat. Mỗi máy clone tạo một lab và CA riêng; không tự nối hai laptop với nhau. Private key và PCAP nằm ngoài repo, không đẩy lên GitHub. Đây là lab học tập, không phải cấu hình production.
+
+## Lỗi thường gặp
+
+| Hiện tượng | Cách xử lý |
+|---|---|
+| CMD vẫn ở C: | Dùng `cd /d` khi vào ổ E: |
+| Không tìm thấy lab.cmd | Dùng `dir lab.cmd` để kiểm tra đúng thư mục |
+| HQ is offline | Chạy `lab.cmd hq` trước branch |
+| Namespace already exists | Dùng lab đang chạy hoặc stop rồi start |
+| Start the lab first | Chạy start rồi bật từng site |
+| Tunnel timeout | Xem log HQ/client trong /var/lib/cs347-lab/logs |
+| Management timeout kèm PASS | Kết quả đúng của bài chặn |
+| Log không trả lại dấu nhắc | Dùng Ctrl+C; VPN vẫn chạy |
+| Test báo FAIL | Kiểm tra status/log, không coi đó là demo đạt |
+
+## Chạy trên Ubuntu trực tiếp
 
 ```bash
-# Terminal 1: chỉ thấy IP WAN, UDP/1194
-sudo bash scripts/demo.sh wan
-# Terminal 2: thấy IP LAN gốc và TCP/443
-sudo bash scripts/demo.sh tunnel
-# Terminal 3: tạo lưu lượng
+sudo bash scripts/install.sh
+sudo bash scripts/start-lab.sh
+# Mỗi lệnh dưới chạy trong một terminal riêng, bật HQ trước.
+sudo bash scripts/connect.sh hq
+sudo bash scripts/connect.sh br1
+sudo bash scripts/connect.sh br2
+sudo bash scripts/connect.sh br3
+# Terminal điều khiển:
 sudo bash scripts/demo.sh erp
-```
-
-Trên WAN: `198.51.100.11 -> 198.51.100.10`, UDP/1194. Trên tunnel: `10.20.10.10 -> 10.10.20.10`, TCP/443. HTTPS vẫn mã hóa nội dung ứng dụng ngay cả trên `tun0`; không nên nói có thể đọc HTTP plaintext từ bài HTTPS này. Điểm minh họa là lớp encapsulation của VPN và địa chỉ LAN/WAN. Ctrl+C dừng tcpdump, không dừng VPN.
-
-### Thu hồi BR2 và khôi phục
-
-```bash
-sudo bash scripts/revoke-br2.sh
-sudo bash scripts/restore-br2.sh
-```
-
-Revoke: lưu bản chứng chỉ cũ cho bài thử, dùng Easy-RSA thu hồi và cập nhật CRL; ngắt BR2, kết nối lại bằng chứng chỉ cũ; kiểm tra log mới của HQ có `certificate revoked`. Thu hồi không được coi là tự động ngắt ngay phiên TLS đang chạy, nên script chủ động reconnect.
-
-Restore: cấp khóa và chứng chỉ MỚI cho BR2, rồi kết nối lại. Chứng chỉ cũ vẫn bị thu hồi; không sửa CRL để làm nó hợp lệ trở lại. Cấp lại khác với hủy việc thu hồi.
-
-## Giải thích cấu hình
-
-- Namespace cô lập interface, bảng route và firewall từng thiết bị; các thiết bị dùng chung kernel.
-- Veth là dây mạng hai đầu; bridge là switch L2. HQ dùng một trunk và ba VLAN, chi nhánh dùng switch access.
-- Pool VPN: 10.255.0.0/24; HQ .1, BR1 .2, BR2 .3, BR3 .4.
-- `route` đưa mạng LAN chi nhánh từ kernel HQ vào tunnel. CCD `iroute` cho OpenVPN biết chi nhánh nào sở hữu mạng đó.
-- Server đẩy route các LAN đến client; route LAN của chính client vẫn là mạng trực tiếp.
-- Không bật `client-to-client`, không dùng DCO trong lab để lưu lượng liên chi nhánh đi qua kernel HQ và nftables. Xem [OpenVPN 2.6 manual](https://openvpn.net/community-docs/community-articles/openvpn-2-6-manual.html).
-- Firewall HQ cho phép các chi nhánh đến ERP/443 và BR1 đến PC BR2/443; chặn Management và các luồng mới khác. Gói trả lời dùng `ct state established,related`.
-- WAN không có route LAN trực tiếp, không có NAT. Muốn đến ERP phải đi qua VPN.
-- Dịch vụ Python HTTPS là endpoint kiểm thử, không phải ứng dụng ERP đầy đủ. PC3 chạy thêm endpoint HTTPS để demo BR1 -> BR2.
-
-## Kiểm thử và dừng lab
-
-```bash
-sudo bash scripts/test-lab.sh
-sudo bash scripts/test-capture.sh
 sudo bash scripts/stop-lab.sh
 ```
 
-Stop chỉ kết thúc tiến trình trong namespace mang tên `cs347-*`, rồi xóa các namespace lab; giữ PKI/log để dùng lại. Nếu muốn bỏ runtime, hãy sao lưu log cần thiết, dừng lab và tự quản lý thư mục `/var/lib/cs347-lab`.
-
-## Các file chính
-
-```text
-lab.cmd / lab.ps1          Launcher cho Windows/WSL
-scripts/start-lab.sh        Topology + PKI + OpenVPN + HTTPS
-scripts/stop-lab.sh         Dừng và dọn namespace
-scripts/demo.sh             Các bài demo theo lựa chọn
-scripts/revoke-br2.sh       Thu hồi + chứng minh từ chối
-scripts/restore-br2.sh      Cấp lại chứng chỉ
-config/hq.nft              Policy tại HQ
-config/branch.nft          Policy gateway chi nhánh
-services/https.py          HTTPS endpoint thật
-docs/VALIDATION.md         Kết quả kiểm thử
-```
-
-## Khi gặp lỗi
-
-- Thiếu lệnh: chạy `sudo bash scripts/install.sh`.
-- Namespace đã tồn tại: chạy stop trước start; không start hai lab cùng lúc.
-- Tunnel timeout: xem `/var/lib/cs347-lab/logs/hq.log` và `br1.log`/`br2.log`/`br3.log`.
-- Thiếu TUN/permission: xác nhận WSL VERSION 2 bằng `wsl -l -v`, dùng Ubuntu 24.04 và chạy qua sudo/root.
-- Revoke chưa restore rồi dừng: lần start sau cấp lại BR2 nếu file chứng chỉ active không còn, giữ serial cũ trong CRL.
-- Không thấy ERP: kiểm tra log dịch vụ, `sudo ip netns exec cs347-erp ss -lntp`, trạng thái VPN và counter HQ.
-- Khi WSL bị tắt hoặc Windows khởi động lại, chạy start lại. Chứng chỉ vẫn giữ nhưng namespace/tiến trình không tồn tại.
-
-Không commit private key, runtime hoặc PCAP. Mỗi người clone repo sẽ tự sinh CA/key riêng; đây là lab học tập cô lập, không phải cấu hình production.
+Tài liệu thêm: [hướng dẫn chi tiết](docs/HUONG_DAN_DEMO.md), [kết quả kiểm thử](docs/VALIDATION.md). Cấu hình chính: `scripts/start-lab.sh`, `scripts/connect.sh`, `config/hq.nft`, `config/branch.nft`. Tham khảo [OpenVPN 2.6 manual](https://openvpn.net/community-docs/community-articles/openvpn-2-6-manual.html).
