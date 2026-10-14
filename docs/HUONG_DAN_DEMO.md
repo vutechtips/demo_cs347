@@ -1,5 +1,71 @@
 # Hướng dẫn tự thực hành và demo OpenVPN CS347
 
+## Demo kết nối thủ công: 1 cửa sổ HQ và 3 cửa sổ chi nhánh
+
+`start` chỉ dựng mạng, PKI và dịch vụ; HQ và BR1–BR3 chưa chạy VPN. Bạn tự kết nối từng thiết bị để thấy log realtime xuất hiện. Không cần nhập lệnh tail dài.
+
+**Bước A — cửa sổ điều khiển (CMD):**
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+lab.cmd start
+```
+
+Phải thấy `HQ and all branches are OFFLINE; no VPN started.` Nếu lab cũ đang chạy, dùng `lab.cmd stop` trước. Lệnh `cd /d` chuyển cả ổ đĩa trong CMD. Máy khác thay bằng đường dẫn repo của máy đó.
+
+**Bước B — mở cửa sổ CMD thứ hai, làm HQ:**
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title HQ - VPN SERVER
+lab.cmd hq
+```
+
+Lệnh này bật OpenVPN server HQ rồi hiển thị log liên tục. Lúc này chưa có branch nào kết nối. Để cửa sổ mở.
+
+**Bước C — mở cửa sổ CMD thứ ba, làm BR1:**
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title BR1 - VPN CLIENT
+lab.cmd br1
+```
+
+BR1 bắt đầu xác thực với HQ. BR1 hiện `Initialization Sequence Completed`; cửa sổ HQ xuất hiện log liên quan `br1`. Giải thích: chứng chỉ BR1 hợp lệ, kết nối được chấp nhận và tunnel được cấp IP 10.255.0.2.
+
+**Bước D — mở cửa sổ CMD thứ tư, làm BR2:**
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title BR2 - VPN CLIENT
+lab.cmd br2
+```
+
+Quan sát BR2 hoàn thành kết nối; HQ xuất hiện `br2`. Tunnel BR2 là 10.255.0.3.
+
+**Bước E — mở cửa sổ CMD thứ năm, làm BR3:**
+
+```cmd
+cd /d E:\baitap\openvpn-netns-lab
+title BR3 - VPN CLIENT
+lab.cmd br3
+```
+
+Quan sát BR3 hoàn thành kết nối; HQ xuất hiện `br3`. Tunnel BR3 là 10.255.0.4.
+
+**Bước F — quay lại cửa sổ điều khiển đầu tiên:**
+
+```cmd
+lab.cmd status
+lab.cmd erp
+```
+
+Status cần có 3 dòng CLIENT_LIST. ERP cần trả về ERP-HQ và PASS. Sau đó làm các testcase ở mục 4–9. Cửa sổ điều khiển chạy testcase; bốn cửa sổ HQ/BR vẫn giữ log. Tổng cộng 5 cửa sổ, nhưng chỉ một lab.
+
+Nếu chạy branch trước HQ, sẽ báo `HQ is offline`: bật HQ trước. Ctrl+C ở cửa sổ HQ/BR chỉ dừng xem log, VPN vẫn chạy. Chạy lại `lab.cmd hq` hoặc `br1`/`br2`/`br3` sẽ tiếp tục xem log, không tạo thêm tiến trình VPN. `lab.cmd stop` mới dừng toàn bộ lab.
+
+Khi VPN ổn định, log có thể im lặng. Muốn thấy sự kiện tiếp theo, ở cửa sổ điều khiển chạy `lab.cmd revoke`, rồi `lab.cmd restore`; theo dõi đồng thời HQ và BR2.
+
 Thời lượng gợi ý: 8–10 phút. Chạy từng lệnh, quan sát kết quả rồi giải thích trước khi chuyển bài.
 
 ## Đọc trước: ba terminal dùng CHUNG một lab
@@ -94,7 +160,7 @@ Khi thấy ví dụ `.\lab.cmd erp`: ` .\ ` chỉ file trong thư mục hiện t
 - `[FAIL]` nghĩa là chưa có bằng chứng đạt yêu cầu. Đọc thông báo, kiểm tra trạng thái/log; không trình bày FAIL như kết quả thành công.
 - Counter là số gói/byte rule đã xử lý. Chạy bài kiểm tra nhiều lần thì counter tăng; không cần giống số minh họa.
 
-Sau phần chuẩn bị, thực hiện mục 2–9 bên dưới theo thứ tự. Mỗi mục có tab, lệnh, kết quả và lời giải thích để bạn đọc ngay sau khi chạy.
+Sau phần chuẩn bị, dựng lab và kết nối thủ công theo phần đầu, rồi thực hiện mục 3–9. Mỗi mục có tab, lệnh, kết quả và lời giải thích để bạn đọc ngay sau khi chạy.
 
 ## 1. Chuẩn bị
 
@@ -131,7 +197,7 @@ Sau đó mở 3 tab cùng vào thư mục vừa clone. `install` chỉ cần ch�
 Kết quả cần thấy:
 
 ```text
-[OK] 3 VPN tunnels established. Tests have NOT run automatically.
+[OK] Network ready. HQ and all branches are OFFLINE; no VPN started.
 ```
 
 Nếu báo namespace đã tồn tại, lab đang chạy. Muốn bắt đầu một lượt mới:
@@ -143,7 +209,7 @@ Nếu báo namespace đã tồn tại, lab đang chạy. Muốn bắt đầu m�
 
 **Lời trình bày:**
 
-> Nhóm dựng HQ và ba chi nhánh bằng Linux network namespace. Mỗi gateway có interface, bảng định tuyến, firewall và tiến trình OpenVPN riêng. Script chỉ dựng môi trường; nhóm sẽ chủ động thực hiện từng bài kiểm tra.
+> Nhóm dựng HQ và ba chi nhánh bằng Linux network namespace. Mỗi gateway có interface, bảng định tuyến, firewall và tiến trình OpenVPN riêng. Script chỉ dựng môi trường; nhóm tự bật HQ, kết nối từng chi nhánh rồi thực hiện từng bài kiểm tra.
 
 ## 3. Giới thiệu topology và kết nối — Tab 1
 
@@ -350,7 +416,7 @@ Namespace và tiến trình lab được dọn; chứng chỉ/log vẫn giữ �
 
 | Thứ tự | Lệnh | Kết quả mong muốn |
 |---|---|---|
-| 1 | `.\lab.cmd start` | 3 tunnel lên |
+| 1 | `.\lab.cmd start` | Mạng sẵn sàng; tự bật hq, br1, br2, br3 như đầu tài liệu |
 | 2 | `.\lab.cmd status` | Có br1, br2, br3 |
 | 3 | `.\lab.cmd erp` | ERP-HQ, PASS |
 | 4 | `.\lab.cmd mgmt` | Timeout + counter chặn tăng, PASS |

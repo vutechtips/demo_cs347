@@ -2,6 +2,8 @@
 
 **Tự thực hành từng bước:** [Hướng dẫn demo bằng tiếng Việt](docs/HUONG_DAN_DEMO.md) — lệnh, kết quả cần thấy, lời thuyết trình và xử lý lỗi.
 
+**Kết nối thủ công:** `start` chỉ dựng mạng; chưa bật VPN. Trên Windows mở 4 cửa sổ CMD trong repo, lần lượt chạy `lab.cmd hq`, `lab.cmd br1`, `lab.cmd br2`, `lab.cmd br3`. Mỗi lệnh bật VPN của site đó rồi theo dõi log realtime. Dùng cửa sổ thứ 5 để chạy testcase. Trên Ubuntu dùng `sudo bash scripts/connect.sh hq` và tương tự cho từng branch. HQ phải bật trước branch.
+
 Lab HQ + 3 chi nhánh cho đồ án CS347, dựng bằng một kernel Linux. Chạy trên Ubuntu 24.04 hoặc Ubuntu 24.04 trong WSL2; không cần VMware, VirtualBox hay Docker. WSL2 vẫn sử dụng ảo hóa nhẹ bên dưới.
 
 OpenVPN, PKI, routing, VLAN, firewall và gói tin đều chạy thật. Internet trong lab là mạng WAN cô lập, không kết nối Internet bên ngoài. Đây là lab trên một máy; clone repo trên máy khác sẽ tạo một lab độc lập, không tự nối VPN hai laptop với nhau.
@@ -85,7 +87,7 @@ sudo bash scripts/install.sh
 sudo bash scripts/start-lab.sh
 ```
 
-`start-lab.sh` dựng mạng và kết nối VPN rồi dừng; không tự chạy testcase. Lần đầu tạo CA/chứng chỉ; lần sau dùng lại. Runtime nằm trong `/var/lib/cs347-lab`, ngoài repo.
+`start-lab.sh` chỉ dựng mạng; dùng `connect.sh` để tự bật HQ và từng branch; không tự chạy testcase. Lần đầu tạo CA/chứng chỉ; lần sau dùng lại. Runtime nằm trong `/var/lib/cs347-lab`, ngoài repo.
 
 ## Demo trước giám khảo
 

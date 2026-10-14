@@ -157,21 +157,21 @@ done
 # No client-to-client: branch traffic must traverse the kernel nftables forward hook.
 nx hq nft -f "$ROOT/config/hq.nft"
 for n in br1 br2 br3; do nx "$n" nft -f "$ROOT/config/branch.nft"; done
-nx hq openvpn --config "$STATE/config/hq.conf" --daemon
-for n in br1 br2 br3; do client_start "$n"; done
+# VPN is started manually from the HQ/branch terminals during the demo.
+archive="$STATE/logs/archive/$(date +%Y%m%d-%H%M%S)-$$"
+mkdir -p "$archive"
+for n in hq br1 br2 br3; do
+  [[ ! -f "$STATE/logs/$n.log" ]] || mv "$STATE/logs/$n.log" "$archive/"
+  touch "$STATE/logs/$n.log"
+done
+[[ ! -f "$STATE/logs/status.txt" ]] || mv "$STATE/logs/status.txt" "$archive/"
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 30 -keyout "$STATE/web/key.pem" -out "$STATE/web/cert.pem" -subj /CN=CS347-Demo -addext 'subjectAltName=IP:10.10.20.10,IP:10.10.30.10,IP:10.30.10.10' >/dev/null 2>&1
 for spec in 'erp 10.10.20.10 ERP-HQ' 'mgmt 10.10.30.10 MANAGEMENT-HQ' 'pc2 10.30.10.10 BR2-HTTPS'; do
   read -r n addr label <<< "$spec"
   nohup ip netns exec "cs347-$n" python3 "$ROOT/services/https.py" "$addr" "$STATE/web/cert.pem" "$STATE/web/key.pem" "$label" > "$STATE/logs/$n-service.log" 2>&1 < /dev/null &
 done
-for attempt in {1..30}; do
-  count=0
-  for n in br1 br2 br3; do nx "$n" ip -4 addr show tun0 2>/dev/null | grep -q 'inet 10.255' && count=$((count+1)) || true; done
-  [[ $count == 3 ]] && break
-  sleep 1
-done
-[[ $count == 3 ]] || { echo 'Tunnel timeout; inspect logs. A revoked certificate needs reissue.'; false; }
 touch "$STATE/ready"
 trap - ERR
-echo '[OK] 3 VPN tunnels established. Tests have NOT run automatically.'
-echo 'Next: sudo bash scripts/demo.sh erp'
+echo '[OK] Network ready. HQ and all branches are OFFLINE; no VPN started.'
+echo 'Open 4 CMD windows: lab.cmd hq, lab.cmd br1, lab.cmd br2, lab.cmd br3.'
+echo 'Each command starts that VPN and shows its live log. Ctrl+C stops viewing only.'

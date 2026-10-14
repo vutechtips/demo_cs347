@@ -27,7 +27,7 @@ case "${1:-help}" in
     [[ $after -gt $before ]] || { echo '[FAIL] No HQ default-deny evidence'; exit 1; }
     echo '[PASS] HQ default-deny counter increased';;
   status)
-    cat "$STATE/logs/status.txt"
+    if [[ -f "$STATE/logs/status.txt" ]]; then cat "$STATE/logs/status.txt"; else echo '[INFO] HQ has not started; all VPN sites are offline.'; fi
     nx hq nft list table inet lab;;
   wan) nx hq tcpdump -ni wan0 udp port 1194;;
   tunnel) nx hq tcpdump -ni tun0;;
